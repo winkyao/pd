@@ -40,6 +40,7 @@ import (
 	"github.com/tikv/pd/client/pkg/retry"
 	"github.com/tikv/pd/client/pkg/utils/tsoutil"
 	sd "github.com/tikv/pd/client/servicediscovery"
+	"github.com/tikv/pd/server"
 )
 
 type tsoInfo struct {
@@ -403,6 +404,33 @@ func (td *tsoDispatcher) handleProcessRequestError(
 	}
 }
 
+// tryGetTSOLocally tries to get the TSO from local instead of calling RPC.
+// this func only available when the single instance(tidb,pd,tikv) mode is enabled.
+// succ indicates whether this server is the PD leader and the TSO is successfully fetched locally.
+func tryGetTSOLocally(keyspaceGroupID uint32, count int64, callback onFinishedCallback) (succ bool) {
+	pdServer := server.GetGlobalPDServer()
+	if pdServer == nil || !pdServer.GetMember().IsLeader() {
+		return false
+	}
+
+	tso, err := pdServer.GetTSOAllocatorManager().GetAllocator().GenerateTSO(context.Background(), uint32(count))
+	if err != nil {
+		// if there is any error, fall back to the RPC mode.
+		log.Warn("[tso] failed to generate TSO locally", zap.Error(err))
+		return false
+	}
+	// no need to check leadership here again, since GenerateTSO will check it internally
+	// and return error when the leader is changed.
+	result := tsoRequestResult{
+		physical:            tso.GetPhysical(),
+		logical:             tso.GetLogical(),
+		count:               uint32(count),
+		respKeyspaceGroupID: constants.DefaultKeyspaceGroupID,
+	}
+	callback(result, keyspaceGroupID, nil)
+	return true
+}
+
 // processRequests sends the RPC request for the batch. It's guaranteed that after calling this function, requests
 // in the batch must be eventually finished (done or canceled), either synchronously or asynchronously.
 // `close(done)` will be called at the same time when finishing the requests.
@@ -467,6 +495,11 @@ func (td *tsoDispatcher) processRequests(
 		// Do the check before releasing the token.
 		td.checkMonotonicity(tsoInfoBeforeReq, curTSOInfo, firstLogical)
 		td.doneCollectedRequests(tbc, result.physical, firstLogical, stream.streamID)
+	}
+
+	if tryGetTSOLocally(keyspaceID, count, cb) {
+		// if tryGetTSOLocally succeeded, callback will be called, no need to send RPC.
+		return nil
 	}
 
 	err := stream.processRequests(

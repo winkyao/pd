@@ -250,6 +250,8 @@ func start(cmd *cobra.Command, args []string, services ...string) {
 		log.Fatal("create server failed", errs.ZapError(err))
 	}
 
+	server.SetGlobalPDServer(svr)
+
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc,
 		syscall.SIGHUP,

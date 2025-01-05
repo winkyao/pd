@@ -36,6 +36,18 @@ import (
 	"github.com/tikv/pd/server/config"
 )
 
+var globalPDSrv *Server
+
+// GetGlobalPDServer returns the global PD server instance.
+func GetGlobalPDServer() *Server {
+	return globalPDSrv
+}
+
+// SetGlobalPDServer sets the global PD server instance.
+func SetGlobalPDServer(srv *Server) {
+	globalPDSrv = srv
+}
+
 // CheckAndGetPDVersion checks and returns the PD version.
 func CheckAndGetPDVersion() *semver.Version {
 	pdVersion := versioninfo.MinSupportedVersion(versioninfo.Base)
