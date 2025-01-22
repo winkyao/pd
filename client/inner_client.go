@@ -143,11 +143,12 @@ func (c *innerClient) resetTSOClientLocked(mode pdpb.ServiceMode) {
 	}
 }
 
-func (c *innerClient) scheduleUpdateTokenConnection() {
+func (c *innerClient) scheduleUpdateTokenConnection(string) error {
 	select {
 	case c.updateTokenConnectionCh <- struct{}{}:
 	default:
 	}
+	return nil
 }
 
 func (c *innerClient) getServiceMode() pdpb.ServiceMode {
@@ -188,7 +189,7 @@ func (c *innerClient) setup() error {
 	}
 
 	// Register callbacks
-	c.serviceDiscovery.AddServingURLSwitchedCallback(c.scheduleUpdateTokenConnection)
+	c.serviceDiscovery.AddLeaderSwitchedCallback(c.scheduleUpdateTokenConnection)
 
 	// Create dispatchers
 	c.createTokenDispatcher()
